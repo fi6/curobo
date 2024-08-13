@@ -39,7 +39,7 @@ from curobo.rollout.rollout_base import Goal, RolloutBase, RolloutConfig, Rollou
 from curobo.types.base import TensorDeviceType
 from curobo.types.robot import CSpaceConfig, RobotConfig
 from curobo.types.state import JointState
-from curobo.util.logger import log_error, log_info, log_warn
+from curobo.util.logger import log_error, log_info, log_warn, log_debug
 from curobo.util.tensor_util import cat_sum, cat_sum_horizon
 
 
@@ -402,12 +402,20 @@ class ArmBase(RolloutBase, ArmBaseConfig):
                     state.robot_spheres, env_query_idx=None
                 )
 
+            if torch.any(coll_constraint):
+                log_debug("Collision Detected in constraint function")
+                if torch.all(coll_constraint.count_nonzero(-1)):
+                    log_warn("All collisions found in constraint function")
             constraint_list.append(coll_constraint)
         if (
             self.constraint_cfg.self_collision_cfg is not None
             and self.robot_self_collision_constraint.enabled
         ):
             self_constraint = self.robot_self_collision_constraint.forward(state.robot_spheres)
+            if torch.any(self_constraint):
+                log_debug("Self Collision Detected in constraint function")
+                if torch.all(self_constraint.count_nonzero(-1)):
+                    log_warn("All self collisions found in constraint function")
             constraint_list.append(self_constraint)
         constraint = cat_sum(constraint_list)
 

@@ -101,3 +101,13 @@ def log_error(
             txt, exc_info=exc_info, stack_info=stack_info, stacklevel=stacklevel, *args, **kwargs
         )
     raise ValueError(txt)
+
+def log_debug(txt: str, logger_name: str = "curobo", *args, **kwargs):
+    """Log debug message. Also see :py:meth:`logging.Logger.debug`.
+
+    Args:
+        txt: Info message.
+        logger_name: Name of the logger. Default is "curobo".
+    """
+    logger = logging.getLogger(logger_name)
+    logger.debug(txt, *args, **kwargs)
