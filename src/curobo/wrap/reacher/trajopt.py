@@ -912,8 +912,8 @@ class TrajOptSolver(TrajOptSolverConfig):
         )
 
         # remove goal state if goal pose is not None:
-        if goal_buffer.goal_pose.position is not None:
-            goal_buffer.goal_state = None
+        # if goal_buffer.goal_pose.position is not None:
+        #     goal_buffer.goal_state = None
         self.solver.reset()
         result = self.solver.solve(goal_buffer, seed_traj)
         log_info("Ran TO")

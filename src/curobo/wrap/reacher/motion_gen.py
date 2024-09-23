@@ -2106,6 +2106,69 @@ class MotionGen(MotionGenConfig):
             )
         return result
 
+    def plan_mixed_goal(
+        self,
+        start_state: JointState,
+        goal_state: JointState,
+        goal_pose: Pose,
+        plan_config: MotionGenPlanConfig = MotionGenPlanConfig(),
+    ) -> MotionGenResult:
+        time_dict = {
+            "solve_time": 0,
+            "ik_time": 0,
+            "graph_time": 0,
+            "trajopt_time": 0,
+            "trajopt_attempts": 0,
+            "finetune_time": 0,
+        }
+        result = None
+        goal = Goal(goal_state=goal_state, goal_pose=goal_pose, current_state=start_state)
+        solve_state = ReacherSolveState(
+            ReacherSolveType.SINGLE,
+            num_ik_seeds=1,
+            num_trajopt_seeds=plan_config.num_trajopt_seeds or self.trajopt_solver.num_seeds,
+            num_graph_seeds=self.trajopt_solver.num_seeds,
+            batch_size=1,
+            n_envs=1,
+            n_goalset=1,
+        )
+        force_graph = plan_config.enable_graph
+        valid_query = True
+        # if plan_config.check_start_validity:
+        #     valid_query, status = self.check_start_state(start_state)
+        #     if not valid_query:
+        #         result = MotionGenResult(
+        #             success=torch.as_tensor([False], device=self.tensor_args.device),
+        #             valid_query=valid_query,
+        #             status=status,
+        #         )
+        #         return result
+
+        for n in range(plan_config.max_attempts):
+            result = self._plan_from_mixed_solve_state(
+                solve_state, start_state, goal_state, goal_pose, plan_config=plan_config
+            )
+            # time_dict["trajopt_time"] += result.solve_time
+            # time_dict["graph_time"] += result.graph_time
+            # time_dict["finetune_time"] += result.finetune_time
+            # time_dict["trajopt_attempts"] = n
+            # if plan_config.enable_graph_attempt is not None and (
+            #     n >= plan_config.enable_graph_attempt - 1 and not plan_config.enable_graph
+            # ):
+            #     plan_config.enable_graph = True
+            # if plan_config.disable_graph_attempt is not None and (
+            #     n >= plan_config.disable_graph_attempt - 1 and not force_graph
+            # ):
+            #     plan_config.enable_graph = False
+
+            if torch.any(result.success):
+                break
+            if not result.valid_query:
+                break
+
+
+        return result
+
     def solve_trajopt(
         self,
         goal: Goal,
@@ -3777,6 +3840,155 @@ class MotionGen(MotionGenConfig):
             result.optimized_plan = traj_result.solution
             result.goalset_index = traj_result.goalset_index
 
+        return result
+
+    def _plan_from_mixed_solve_state(
+        self,
+        solve_state: ReacherSolveState,
+        start_state: JointState,
+        goal_state: JointState,
+        goal_pose: Pose,
+        plan_config: MotionGenPlanConfig = MotionGenPlanConfig(),
+    ) -> MotionGenResult:
+        trajopt_seed_traj = None
+        trajopt_seed_success = None
+        trajopt_newton_iters = None
+        graph_success = 0
+
+        if len(start_state.shape) == 1:
+            log_error("Joint state should be not a vector (dof) should be (bxdof)")
+
+        # if goal_pose.shape[0] != 1:
+        #     log_error(
+        #         "Goal position should be of shape [1, n_goalset, -1], current shape: "
+        #         + str(goal_pose.shape)
+        #     )
+
+        result = MotionGenResult()
+        # calculate ik(correspond to goal state)
+        # hack right now
+        rollouts = self.ik_solver.get_all_rollout_instances()
+        rollouts = [*rollouts, self.ik_solver.solver.rollout_fn]
+        dof = start_state.shape[1]
+        vec_weight = self.tensor_args.to_device([*[0] * (dof - 1), 1.0])
+        zero_weight = [0] * dof
+        for rollout in rollouts:
+            if not isinstance(rollout, ArmReacher):
+                continue
+            rollout.cspace_convergence.update_weight(1.0)
+            rollout.cspace_convergence.run_weight = 1.0
+            rollout.cspace_convergence._init_post_config()
+            rollout.cspace_convergence.update_vec_weight(vec_weight)
+            rollout.dist_cost.update_weight(200.0)
+            rollout.dist_cost.dof = len(vec_weight)
+            rollout.dist_cost.update_vec_weight(vec_weight)
+            rollout.dist_cost._weight = rollout.dist_cost.weight.clone()
+            rollout.dist_cost.enable_cost()
+            rollout.enable_cspace_cost()
+
+        # success_results = goal_state.position
+        success_results = self.tensor_args.to_device([])
+        goal_state_single = goal_state.clone()[0]
+        for _ in range(2):
+            ik_result = self.ik_solver.solve_single(
+                goal_pose[0], goal_state=goal_state_single, return_seeds=10000
+            )
+            target_iks = ik_result.get_unique_solution(2)
+            door_angle_cost = torch.norm(
+                (
+                    goal_state_single.unsqueeze(0).repeat_seeds(target_iks.shape[0]).position
+                    - target_iks
+                )
+                * vec_weight,
+                p=2,
+                dim=-1,
+                keepdim=True,
+            )
+
+            target_iks = target_iks[(door_angle_cost < 0.08).repeat(1, dof)].view(-1, dof)
+            # dist_cost = torch.norm(
+            #     (start_state.repeat_seeds(target_iks.shape[0]).position - target_iks)
+            #     * self.tensor_args.to_device([0, 0, 0, 1, 1, 1, 1, 1, 1, 0]),
+            #     p=2,
+            #     dim=-1,
+            #     keepdim=True,
+            # )
+            # target_iks = target_iks[(dist_cost < torch.median(dist_cost) * 0.9).repeat(1, 10)].view(
+            #     -1, 10
+            # )
+            success_results = torch.cat((success_results, target_iks), dim=0)
+        target_iks = success_results[: solve_state.num_trajopt_seeds]
+        shape1 = start_state.shape
+        shape2 = target_iks.shape
+        # construct start state and goal state
+        start_state = JointState.from_position(
+            start_state.position.unsqueeze(1)
+            .expand(-1, shape2[0], -1)
+            .squeeze(0)
+            .reshape(-1, shape1[1])
+        )
+        target_iks = (
+            target_iks.unsqueeze(0).expand(shape1[0], -1, -1).squeeze(0).reshape(-1, shape2[1])
+        )
+        # target_iks = goal_state.repeat_seeds(solve_state.num_trajopt_seeds).position
+
+        # if plan_config.pose_cost_metric is not None:
+
+        # ---------------------------
+        # do trajopt:
+        n_batch = 30
+        n_goalset = target_iks.shape[0]
+        # assert n_goalset > n_batch
+
+        traj_result = None  # type: TrajOptResult
+        with profiler.record_function("motion_gen/trajopt"):
+            log_info("MG: running TO")
+            for i in range(int(np.ceil(n_goalset / n_batch))):
+                goal_state = JointState.from_position(
+                    self.tensor_args.to_device(
+                        target_iks[i * n_batch : min((i + 1) * n_batch, n_goalset)]
+                    )
+                )
+                goal_pose = self.ik_solver.fk(goal_state.position).ee_pose
+                goal = Goal(
+                    goal_pose=goal_pose,
+                    goal_state=goal_state,
+                    current_state=start_state[i * n_batch : min((i + 1) * n_batch, n_goalset)],
+                )
+                result = self.trajopt_solver.solve_batch_goalset(goal)
+                if traj_result is None:
+                    traj_result = result.solution[result.success]
+                else:
+                    traj_result.extend(result.solution[result.success])
+                if len(traj_result) >= 15:
+                    break
+                # if torch.any(traj_result.success):
+                #     print("success result found")
+                #     break
+        # trim duplicate waypoints
+        out_diff = traj_result.interpolated_solution.position - torch.roll(
+            traj_result.interpolated_solution.position, 1, dims=1
+        )
+        out_trim_idx = out_diff.shape[1]
+        for i in range(out_diff.shape[1], 0, -1):
+            if torch.sum(out_diff[..., i - 1, :]) != 0.0:
+                out_trim_idx = i
+                break
+
+        result.optimized_plan = traj_result.solution
+        result.success = traj_result.success
+        result.interpolated_plan = traj_result.interpolated_solution.trim_trajectory(
+            0, out_trim_idx
+        )
+        result.interpolation_dt = self.trajopt_solver.interpolation_dt
+        result.path_buffer_last_tstep = traj_result.path_buffer_last_tstep
+        result.position_error = traj_result.position_error
+        result.rotation_error = traj_result.rotation_error
+        result.optimized_dt = traj_result.optimized_dt
+        result.optimized_plan = traj_result.solution
+        result.goalset_index = traj_result.goalset_index
+        if torch.count_nonzero(traj_result.success) == 0:
+            result.status = MotionGenStatus.TRAJOPT_FAIL
         return result
 
     def _plan_from_solve_state_batch(

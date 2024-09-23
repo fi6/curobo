@@ -579,6 +579,7 @@ class IKSolver(IKSolverConfig):
         goal_pose: Pose,
         retract_config: Optional[T_BDOF] = None,
         link_poses: Optional[Dict[str, Pose]] = None,
+        goal_state: Optional[JointState] = None,
     ) -> Goal:
         """Update goal buffer with new goal pose and retract configuration.
 
@@ -595,7 +596,7 @@ class IKSolver(IKSolverConfig):
         """
         self._solve_state, self._goal_buffer, update_reference = solve_state.update_goal_buffer(
             goal_pose,
-            None,
+            goal_state,
             retract_config,
             link_poses,
             self._solve_state,
@@ -636,6 +637,7 @@ class IKSolver(IKSolverConfig):
         use_nn_seed: bool = True,
         newton_iters: Optional[int] = None,
         link_poses: Optional[Dict[str, Pose]] = None,
+        goal_state: Optional[JointState] = None,
     ) -> IKResult:
         """Solve single IK problem.
 
@@ -692,6 +694,7 @@ class IKSolver(IKSolverConfig):
             use_nn_seed,
             newton_iters,
             link_poses=link_poses,
+            goal_state=goal_state,
         )
 
     def solve_goalset(
@@ -1034,6 +1037,7 @@ class IKSolver(IKSolverConfig):
         use_nn_seed: bool = True,
         newton_iters: Optional[int] = None,
         link_poses: Optional[Dict[str, Pose]] = None,
+        goal_state: Optional[JointState] = None,
     ) -> IKResult:
         """Solve IK problem from ReacherSolveState. Called by all solve functions.
 
@@ -1063,7 +1067,7 @@ class IKSolver(IKSolverConfig):
             to check if the problem was solved successfully.
         """
         # create goal buffer:
-        goal_buffer = self._update_goal_buffer(solve_state, goal_pose, retract_config, link_poses)
+        goal_buffer = self._update_goal_buffer(solve_state, goal_pose, retract_config, link_poses, goal_state)
         coord_position_seed = self.get_seed(
             num_seeds, goal_buffer.goal_pose, use_nn_seed, seed_config
         )
@@ -1071,6 +1075,8 @@ class IKSolver(IKSolverConfig):
         if newton_iters is not None:
             self.solver.newton_optimizer.outer_iters = newton_iters
         self.solver.reset()
+        if goal_state is not None:
+            self.solver.rollout_fn.dist_cost.enable_cost()
         result = self.solver.solve(goal_buffer, coord_position_seed)
         if newton_iters is not None:
             self.solver.newton_optimizer.outer_iters = self.og_newton_iters
