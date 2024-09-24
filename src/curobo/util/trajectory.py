@@ -288,6 +288,8 @@ def get_cpu_kunz_stilman_interpolation(
     )
     for k in range(out_traj.shape[0]):
         tstep = traj_steps[k].item()
+        if tstep < 0:
+            tstep = None
         opt_d = opt_dt[k].item()
         in_traj = np.copy(cpu_traj[k])
 
