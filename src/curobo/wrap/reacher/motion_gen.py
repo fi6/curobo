@@ -3941,7 +3941,7 @@ class MotionGen(MotionGenConfig):
                 keepdim=True,
             )
 
-            target_iks = target_iks[(door_angle_cost < 0.08).repeat(1, dof)].view(-1, dof)
+            # target_iks = target_iks[(door_angle_cost < 0.08).repeat(1, dof)].view(-1, dof)
             # dist_cost = torch.norm(
             #     (start_state.repeat_seeds(target_iks.shape[0]).position - target_iks)
             #     * self.tensor_args.to_device([0, 0, 0, 1, 1, 1, 1, 1, 1, 0]),
@@ -3949,7 +3949,11 @@ class MotionGen(MotionGenConfig):
             #     dim=-1,
             #     keepdim=True,
             # )
-            # target_iks = target_iks[(dist_cost < torch.median(dist_cost) * 0.9).repeat(1, 10)].view(
+            # sorted_dist_cost, sorted_indices = torch.sort(dist_cost, dim=0)
+
+            # Use the sorted indices to reorder target_iks
+            # target_iks = target_iks[sorted_indices.view(-1)]
+            # target_iks = target_iks[(dist_cost < torch.median(dist_cost) * 0.7).repeat(1, 10)].view(
             #     -1, 10
             # )
             success_results = torch.cat((success_results, target_iks), dim=0)
@@ -3972,7 +3976,7 @@ class MotionGen(MotionGenConfig):
 
         # ---------------------------
         # do trajopt:
-        n_batch = 30
+        n_batch = 10
         n_goalset = target_iks.shape[0]
         # assert n_goalset > n_batch
 
@@ -3992,36 +3996,29 @@ class MotionGen(MotionGenConfig):
                     current_state=start_state[i * n_batch : min((i + 1) * n_batch, n_goalset)],
                 )
                 result = self.trajopt_solver.solve_batch_goalset(goal)
-                if traj_result is None:
-                    traj_result = result.solution[result.success]
-                else:
-                    traj_result.extend(result.solution[result.success])
-                if len(traj_result) >= 15:
+                if result.success.count_nonzero().item():
+                    traj_result = result
                     break
+                #     if traj_result is None:
+                #         traj_result = result.solution[result.success]
+                #     else:
+                #         traj_result.stack(result.solution[result.success])
+                # if len(traj_result) >= 15:
+                #     break
                 # if torch.any(traj_result.success):
                 #     print("success result found")
                 #     break
-        # trim duplicate waypoints
-        out_diff = traj_result.interpolated_solution.position - torch.roll(
-            traj_result.interpolated_solution.position, 1, dims=1
-        )
-        out_trim_idx = out_diff.shape[1]
-        for i in range(out_diff.shape[1], 0, -1):
-            if torch.sum(out_diff[..., i - 1, :]) != 0.0:
-                out_trim_idx = i
-                break
-
+        result = MotionGenResult()
         result.optimized_plan = traj_result.solution
         result.success = traj_result.success
-        result.interpolated_plan = traj_result.interpolated_solution.trim_trajectory(
-            0, out_trim_idx
-        )
+        # result.interpolated_plan = traj_result.interpolated_solution.trim_trajectory(
+        #     0, out_trim_idx
+        # )
         result.interpolation_dt = self.trajopt_solver.interpolation_dt
         result.path_buffer_last_tstep = traj_result.path_buffer_last_tstep
         result.position_error = traj_result.position_error
         result.rotation_error = traj_result.rotation_error
         result.optimized_dt = traj_result.optimized_dt
-        result.optimized_plan = traj_result.solution
         result.goalset_index = traj_result.goalset_index
         if torch.count_nonzero(traj_result.success) == 0:
             result.status = MotionGenStatus.TRAJOPT_FAIL

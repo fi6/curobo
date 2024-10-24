@@ -402,22 +402,25 @@ class ArmBase(RolloutBase, ArmBaseConfig):
                     state.robot_spheres, env_query_idx=None
                 )
 
-            if torch.any(coll_constraint):
-                log_debug("Collision Detected in constraint function")
-                if torch.all(coll_constraint.count_nonzero(-1)):
-                    log_warn("All collisions found in constraint function")
+            # if torch.any(coll_constraint):
+            #     pass
+            #     log_debug("Collision Detected in constraint function")
+            #     if torch.all(coll_constraint.count_nonzero(-1)):
+            #         log_warn("All collisions found in constraint function")
             constraint_list.append(coll_constraint)
         if (
             self.constraint_cfg.self_collision_cfg is not None
             and self.robot_self_collision_constraint.enabled
         ):
             self_constraint = self.robot_self_collision_constraint.forward(state.robot_spheres)
-            if torch.any(self_constraint):
-                log_debug("Self Collision Detected in constraint function")
-                if torch.all(self_constraint.count_nonzero(-1)):
-                    log_warn("All self collisions found in constraint function")
+            # if torch.any(self_constraint):
+            #     log_debug("Self Collision Detected in constraint function")
+                # self_constraint.count_nonzero(-1)
+                # if torch.all(self_constraint.count_nonzero(-1)):
+                #     log_warn("All self collisions found in constraint function")
             constraint_list.append(self_constraint)
         constraint = cat_sum(constraint_list)
+        self.last_costraint = constraint
 
         feasible = constraint == 0.0
 
