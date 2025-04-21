@@ -417,8 +417,8 @@ class ArmReacher(ArmBase, ArmReacherConfig):
         super(ArmReacher, self).update_params(goal)
         if goal.batch_pose_idx is not None:
             self._goal_idx_update = False
-        if goal.goal_pose.position is not None:
-            self.enable_cspace_cost(False)
+        # if goal.goal_pose.position is not None:
+        #     self.enable_cspace_cost(False)
         return True
 
     def enable_pose_cost(self, enable: bool = True):

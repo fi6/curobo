@@ -1998,8 +1998,10 @@ def jit_feasible_success(
             position_error[..., -1] <= position_threshold,
             rotation_error[..., -1] <= rotation_threshold,
         )
-    elif cspace_error is not None:
+    if cspace_error is not None:
         converge = cspace_error[..., -1] <= cspace_threshold
+    # elif cspace_error is not None:
+    #     converge = cspace_error[..., -1] <= cspace_threshold
 
     success = torch.logical_and(feasible, converge)
     return success
