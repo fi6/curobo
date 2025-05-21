@@ -1,0 +1,51 @@
+# Copyright (c) 2019-2021, NVIDIA CORPORATION.  All rights reserved.
+#
+# NVIDIA CORPORATION and its licensors retain all intellectual property
+# and proprietary rights in and to this software, related documentation
+# and any modifications thereto.  Any use, reproduction, disclosure or
+# distribution of this software and related documentation without an express
+# license agreement from NVIDIA CORPORATION is strictly prohibited.
+
+# The robot descriptor defines the generalized coordinates and how to map those
+# to the underlying URDF dofs.
+
+api_version: 1.0
+
+# Defines the generalized coordinates. Each generalized coordinate is assumed
+# to have an entry in the URDF, except when otherwise specified below under
+# cspace_urdf_bridge
+cspace:
+    - torso_joint1
+    - torso_joint2
+    - torso_joint3
+    - torso_joint4
+    - left_arm_joint1
+    - left_arm_joint2
+    - left_arm_joint3
+    - left_arm_joint4
+    - left_arm_joint5
+    - left_arm_joint6
+
+root_link: base_link
+subtree_root_link: base_link
+
+default_q: [
+    0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0
+]
+
+# Most dimensions of the cspace have a direct corresponding element
+# in the URDF. This list of rules defines how unspecified coordinates
+# should be extracted.
+cspace_to_urdf_rules:
+    - {name: right_arm_joint1, rule: fixed, value: 0.0}
+    - {name: right_arm_joint2, rule: fixed, value: 0.0}
+    - {name: right_arm_joint3, rule: fixed, value: 0.0}
+    - {name: right_arm_joint4, rule: fixed, value: 0.0}
+    - {name: right_arm_joint5, rule: fixed, value: 0.0}
+    - {name: right_arm_joint6, rule: fixed, value: 0.0}
+    - {name: left_gripper_axis1, rule: fixed, value: 0.0}
+    - {name: left_gripper_axis2, rule: fixed, value: 0.0}
+    - {name: right_gripper_axis1, rule: fixed, value: 0.0}
+    - {name: right_gripper_axis2, rule: fixed, value: 0.0}
+
+composite_task_spaces: []
