@@ -426,6 +426,9 @@ class Sphere(Obstacle):
 @dataclass
 class Mesh(Obstacle):
     """Obstacle represented as mesh."""
+    
+    # : Trimesh instance
+    trimesh: Optional[trimesh.Trimesh] = None
 
     #: Path to mesh file.
     file_path: Optional[str] = None
@@ -472,9 +475,11 @@ class Mesh(Obstacle):
         Returns:
             trimesh.Trimesh: Instance of obstacle as a trimesh.
         """
-
+        # load mesh from trimesh instance:
+        if self.trimesh is not None:
+            m = self.trimesh
         # load mesh from filepath or verts and faces:
-        if self.file_path is not None:
+        elif self.file_path is not None:
             m = trimesh.load(self.file_path, process=process, force="mesh")
             if isinstance(m, trimesh.Scene):
                 m = m.dump(concatenate=True)
@@ -507,7 +512,12 @@ class Mesh(Obstacle):
             and self.file_path is not None
         ):
             # try to load material:
-            m = trimesh.load(self.file_path, process=False, force="mesh")
+            if self.trimesh is not None:
+                m = self.trimesh
+            elif self.file_path is not None:
+                m = trimesh.load(self.file_path, process=False, force="mesh")
+            else:
+                raise ValueError("No Mesh object found")
             if isinstance(m, trimesh.Scene):
                 m = m.dump(concatenate=True)
             if isinstance(m.visual, trimesh.visual.texture.TextureVisuals):
@@ -529,7 +539,11 @@ class Mesh(Obstacle):
             Tuple[List[List[float]], List[int]]: vertices and faces of mesh.
         """
         verts = faces = None
-        if self.file_path is not None:
+        if self.trimesh is not None:
+            m = self.trimesh
+            verts = m.vertices.view(np.ndarray)
+            faces = m.faces
+        elif self.file_path is not None:
             m = self.get_trimesh_mesh(process=process)
             verts = m.vertices.view(np.ndarray)
             faces = m.faces
