@@ -29,6 +29,7 @@ from curobo.geom.types import (
     Obstacle,
     Sphere,
     WorldConfig,
+    VoxelGrid,
 )
 from curobo.types.base import TensorDeviceType
 from curobo.types.math import Pose
@@ -541,6 +542,20 @@ class UsdHelper:
             self.get_prim_from_obstacle(o, full_path, timestep=timestep) for o in obstacles.objects
         ]
         return prim_path
+
+    def voxel_to_mesh(self, obstacle: VoxelGrid, pitch = None, feature_threshold: float|None = None):
+        import trimesh
+        # convert voxel to mesh:
+        points = obstacle.get_occupied_voxels(feature_threshold).detach().cpu().numpy()
+        points = points[:, :3]
+        if pitch is None:
+            pitch = obstacle.voxel_size
+        mesh = trimesh.voxel.ops.points_to_marching_cubes(points, pitch=pitch)
+        return Mesh(
+            vertices=mesh.vertices.view(np.ndarray),
+            faces=mesh.faces,
+            name="merged_mesh",
+            pose=[0, 0, 0, 1, 0, 0, 0])
 
     def get_prim_from_obstacle(
         self, obstacle: Obstacle, base_frame: str = "/world/obstacles", timestep=None
