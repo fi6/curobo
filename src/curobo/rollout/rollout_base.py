@@ -76,6 +76,8 @@ class Trajectory:
     debug: Optional[dict] = None
 
 
+from dataclasses import dataclass, field
+
 @dataclass
 class Goal(Sequence):
     """Goal data class used to update optimization target.
@@ -91,7 +93,7 @@ class Goal(Sequence):
 
     name: str = "goal"
     goal_state: Optional[State] = None
-    goal_pose: Pose = Pose()
+    goal_pose: Pose = field(default_factory=Pose)
     links_goal_pose: Optional[Dict[str, Pose]] = None
     current_state: Optional[State] = None
     retract_state: Optional[T_DOF] = None
